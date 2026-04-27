@@ -1,43 +1,34 @@
 import os
-import asyncio
 import threading
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from data import get_movie_qualities
-import bot  # This imports your bot.py logic
+import bot # This must import the 'application' variable from your bot.py
 
 app = Flask(__name__)
 CORS(app)
 
 @app.route('/')
 def home():
-    # Cron-job.org will hit this URL to keep the app awake
-    return "OmniStream System is Online!"
+    return "OmniStream API & Bot is Running!"
 
 @app.route('/get-links')
 def links():
     url = request.args.get('url')
-    if not url:
-        return jsonify({"error": "No URL provided"}), 400
     return jsonify(get_movie_qualities(url))
 
 def run_bot():
-    """Function to initialize and run the telegram bot."""
-    print("Starting Telegram Bot...")
-    # We create a new event loop for the background thread
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
-    # Import the application object from bot.py
-    # We will modify bot.py slightly to make this easier
-    from bot import application
-    application.run_polling(close_loop=False)
+    """Start the bot polling."""
+    # We use the 'application' object defined in bot.py
+    print("Bot thread started...")
+    bot.application.run_polling(close_loop=False, stop_signals=None)
 
 if __name__ == "__main__":
-    # 1. Start the Bot in a background thread
-    bot_thread = threading.Thread(target=run_bot, daemon=True)
-    bot_thread.start()
+    # Start Bot in background thread
+    t = threading.Thread(target=run_bot)
+    t.daemon = True
+    t.start()
     
-    # 2. Start Flask (Render requires this to be on 0.0.0.0)
-    port = int(os.environ.get("PORT", 5000))
+    # Start Flask on the port Render provides
+    port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
