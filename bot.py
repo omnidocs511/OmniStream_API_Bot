@@ -24,7 +24,7 @@ def schedule_delete(context, chat_id, message_id):
     if context.job_queue:
         context.job_queue.run_once(
             delete_message_job, 
-            when=900, # 900 seconds = 15 minutes
+            when=10, # 900 seconds = 15 minutes
             chat_id=chat_id, 
             data=message_id
         )
