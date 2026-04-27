@@ -21,6 +21,12 @@ def run_bot():
     """Start the bot polling."""
     # We use the 'application' object defined in bot.py
     print("Bot thread started...")
+    
+    if not bot.application.updater:
+        # This ensures the JobQueue and everything else is ready
+        asyncio.run(bot.application.initialize())
+        asyncio.run(bot.application.start())
+        
     bot.application.run_polling(close_loop=False, stop_signals=None)
 
 if __name__ == "__main__":
