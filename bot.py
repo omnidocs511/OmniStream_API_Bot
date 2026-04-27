@@ -22,12 +22,7 @@ def schedule_delete(context, chat_id, message_id):
     """Schedules a deletion for 15 minutes (900 seconds)."""
     # Note: JobQueue is required for this to work
     if context.job_queue:
-        context.job_queue.run_once(
-            delete_message_job, 
-            when=10, # 900 seconds = 15 minutes
-            chat_id=chat_id, 
-            data=message_id
-        )
+        context.job_queue.run_once(delete_message_job, when=900, chat_id=chat_id, data=message_id)
 
 # --- BOT HANDLERS ---
 
@@ -69,12 +64,16 @@ async def send_results_page(update_or_query, context, page):
     if isinstance(update_or_query, Update):
         sent_results = await update_or_query.message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
         
+        tip_text = "💡 *Tip:* For the best experience and faster downloads, open the links in your **System Browser** (Chrome, Safari, Brave, etc.)."
+        send_tip = await update_or_query.message.reply_text(tip_text, parse_mode='Markdown')
+        
         notice_text = "⚠️ *Notice:*\nThis message and your search query will auto-delete in 15 minutes."
         sent_notice = await update_or_query.message.reply_text(notice_text, parse_mode='Markdown')
 
         # Schedule deletion for: Results, Notice, and User's original message
-        schedule_delete(context, update_or_query.effective_chat.id, sent_results.message_id)
         schedule_delete(context, update_or_query.effective_chat.id, sent_notice.message_id)
+        schedule_delete(context, update_or_query.effective_chat.id, send_tip.message_id)
+        schedule_delete(context, update_or_query.effective_chat.id, sent_results.message_id)
         schedule_delete(context, update_or_query.effective_chat.id, update_or_query.message.message_id)
     else:
         # Edit existing message for pagination
