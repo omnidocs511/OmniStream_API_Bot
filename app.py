@@ -1,5 +1,6 @@
 import os
 import threading
+import asyncio
 from flask import Flask, jsonify, request
 from flask_cors import CORS
 from data import get_movie_qualities
@@ -22,17 +23,14 @@ def run_bot():
     # We use the 'application' object defined in bot.py
     print("Bot thread started...")
     
-    if not bot.application.updater:
-        # This ensures the JobQueue and everything else is ready
-        asyncio.run(bot.application.initialize())
-        asyncio.run(bot.application.start())
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
         
     bot.application.run_polling(close_loop=False, stop_signals=None)
 
 if __name__ == "__main__":
     # Start Bot in background thread
-    t = threading.Thread(target=run_bot)
-    t.daemon = True
+    t = threading.Thread(target=run_bot, daemon=True)
     t.start()
     
     # Start Flask on the port Render provides
