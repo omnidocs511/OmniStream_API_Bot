@@ -13,58 +13,80 @@ def get_movie_qualities(movie_url):
         soup = BeautifulSoup(response.text, 'html.parser')
         qualities = []
 
-        # 1. Locate the main content area (HDHub uses 'page-body' or 'entry-content')
+        # Target the main content area
         content_area = soup.find('main', class_='page-body') or soup.find('div', class_='entry-content')
-        
         if not content_area:
             return []
 
-        # 2. Extract Title for context
-        page_title = soup.find('h1', class_='page-title')
-        movie_name = page_title.get_text(strip=True) if page_title else "Movie"
+        # Context trackers for Series/Episodes
+        current_episode = ""
+        current_res = ""
 
-        # 3. Targeted Link Extraction
-        # We look for all <a> tags that contain resolution keywords or sizes
-        res_pattern = re.compile(r'(\d{3,4}p|4K|2160p|HEVC|10bit|Dual Audio|MB|GB)', re.IGNORECASE)
+        # We iterate through all elements in order to maintain context
+        for element in content_area.find_all(['h3', 'h4', 'p', 'hr', 'strong', 'a']):
+            text = element.get_text(" ", strip=True)
+            text_upper = text.upper()
 
-        for link in content_area.find_all('a', href=True):
-            href = link['href']
-            
-            # Get text from the link AND its children (like <span> or <strong>)
-            # This is key for HDHub as the text is often inside <a><span>...</span></a>
-            link_text = link.get_text(" ", strip=True) 
+            # 1. Detect Episode/Season Header
+            if "EPISODE" in text_upper or "SEASON" in text_upper:
+                # Extract 'Episode 1' from strings like 'EPISODE 1' or 'Episode 01'
+                match = re.search(r'(EPISODE\s+\d+|SEASON\s+\d+)', text_upper)
+                if match:
+                    current_episode = match.group(1).title()
+                    current_res = "" # Reset resolution for new episode block
 
-            # If the link text is empty, check if it's an image link or social link
-            if not link_text or any(x in href.lower() for x in ['telegram', 'discord', 'how-to', 'wp-admin', 'contact']):
-                continue
+            # 2. Detect Resolution (if it's in a header or strong tag but NOT a link)
+            res_match = re.search(r'(\d{3,4}P|4K|2160P|HEVC|10BIT)', text_upper)
+            if res_match and element.name != 'a':
+                current_res = res_match.group(1)
 
-            # Validation: Only keep links that look like download buttons
-            if res_pattern.search(link_text) or "WATCH" in link_text.upper():
+            # 3. Process Links
+            if element.name == 'a' and element.has_attr('href'):
+                href = element['href']
                 
-                # Clean up the label
-                clean_label = link_text.replace("⚡", "").replace(":-", "").strip()
+                # Filter social/junk
+                if any(x in href.lower() for x in ['telegram', 'discord', 'how-to', 'wp-admin', 'contact']):
+                    continue
+
+                # Detect if the link itself contains the resolution (e.g., '720p x264 [3.3GB]')
+                inner_res_match = re.search(r'(\d{3,4}P|4K|2160P|HEVC|10BIT)', text_upper)
+                link_res = inner_res_match.group(1) if inner_res_match else current_res
                 
-                # If it's a "WATCH" link, give it a better name
-                if "WATCH" in clean_label.upper():
-                    clean_label = f"✨ Online Player - {clean_label}"
+                # Build the quality label
+                label_parts = []
+                if current_episode: label_parts.append(current_episode)
+                if link_res: label_parts.append(f"[{link_res}]")
+                
+                # Add the actual link text (e.g., 'Drive', 'Instant', or the full size string)
+                clean_text = text.replace("⚡", "").strip()
+                if clean_text:
+                    label_parts.append(clean_text)
+
+                final_label = " - ".join(label_parts) if label_parts else clean_text
+                
+                # Fallback check: if it's a Download button and has no info, use context
+                if not final_label or final_label.lower() in ['drive', 'instant', 'watch']:
+                   final_label = f"{current_episode} {link_res} {clean_text}".strip()
 
                 qualities.append({
-                    'quality': clean_label,
+                    'quality': final_label,
                     'url': href
                 })
 
-        # 4. Handle Redirection / Final Cleaning
+        # Remove duplicates and cleanup
         unique_qualities = []
         seen_urls = set()
         for item in qualities:
             if item['url'] not in seen_urls:
+                # Final polish on text
+                item['quality'] = re.sub(' +', ' ', item['quality']).replace(" - - ", " - ").strip()
                 unique_qualities.append(item)
                 seen_urls.add(item['url'])
 
         return unique_qualities
 
     except Exception as e:
-        print(f"Scraping error: {e}")
+        print(f"Scraper Error: {e}")
         return []
     
 def search_hdhub(query):
