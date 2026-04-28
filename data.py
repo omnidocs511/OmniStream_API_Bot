@@ -4,8 +4,7 @@ import re
 
 def get_movie_qualities(movie_url):
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept-Language": "en-US,en;q=0.9"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
     }
     
     try:
@@ -13,77 +12,81 @@ def get_movie_qualities(movie_url):
         soup = BeautifulSoup(response.text, 'html.parser')
         qualities = []
 
-        # Target the main content area
-        content_area = soup.find('main', class_='page-body') or soup.find('div', class_='entry-content')
-        if not content_area:
-            return []
+        # Target the content area
+        content = soup.find('main', class_='page-body') or soup.find('div', class_='entry-content')
+        if not content: return []
 
-        # Context trackers for Series/Episodes
-        current_episode = ""
-        current_res = ""
+        # Context Memory
+        curr_episode = ""
+        curr_res = ""
 
-        # We iterate through all elements in order to maintain context
-        for element in content_area.find_all(['h3', 'h4', 'p', 'hr', 'strong', 'a']):
-            text = element.get_text(" ", strip=True)
-            text_upper = text.upper()
+        # regex to find resolutions/qualities
+        res_regex = r'(\d{3,4}P|4K|2160P|HEVC|10BIT|WEB-DL|BLURAY)'
 
-            # 1. Detect Episode/Season Header
-            if "EPISODE" in text_upper or "SEASON" in text_upper:
-                # Extract 'Episode 1' from strings like 'EPISODE 1' or 'Episode 01'
-                match = re.search(r'(EPISODE\s+\d+|SEASON\s+\d+)', text_upper)
-                if match:
-                    current_episode = match.group(1).title()
-                    current_res = "" # Reset resolution for new episode block
+        # Loop through every tag in order
+        for tag in content.find_all(['h3', 'h4', 'p', 'strong', 'a', 'span']):
+            text = tag.get_text(" ", strip=True)
+            text_up = text.upper()
 
-            # 2. Detect Resolution (if it's in a header or strong tag but NOT a link)
-            res_match = re.search(r'(\d{3,4}P|4K|2160P|HEVC|10BIT)', text_upper)
-            if res_match and element.name != 'a':
-                current_res = res_match.group(1)
+            # 1. Update Episode Context (e.g., "Episode 1", "Season 1")
+            if "EPISODE" in text_up or "SEASON" in text_up:
+                ep_match = re.search(r'((?:EPISODE|SEASON)\s+\d+)', text_up)
+                if ep_match:
+                    curr_episode = ep_match.group(1).title()
+                    curr_res = "" # Reset resolution when episode changes
+
+            # 2. Update Resolution Context
+            # If the tag is NOT a link and contains a resolution, save it (e.g., "720p -")
+            if tag.name != 'a':
+                res_match = re.search(res_regex, text_up)
+                if res_match:
+                    curr_res = res_match.group(1)
 
             # 3. Process Links
-            if element.name == 'a' and element.has_attr('href'):
-                href = element['href']
+            if tag.name == 'a' and tag.has_attr('href'):
+                href = tag['href']
                 
-                # Filter social/junk
-                if any(x in href.lower() for x in ['telegram', 'discord', 'how-to', 'wp-admin', 'contact']):
+                # Skip junk
+                if any(x in href.lower() for x in ['telegram', 'discord', 'how-to', 'wp-admin']):
                     continue
 
-                # Detect if the link itself contains the resolution (e.g., '720p x264 [3.3GB]')
-                inner_res_match = re.search(r'(\d{3,4}P|4K|2160P|HEVC|10BIT)', text_upper)
-                link_res = inner_res_match.group(1) if inner_res_match else current_res
-                
-                # Build the quality label
-                label_parts = []
-                if current_episode: label_parts.append(current_episode)
-                if link_res: label_parts.append(f"[{link_res}]")
-                
-                # Add the actual link text (e.g., 'Drive', 'Instant', or the full size string)
-                clean_text = text.replace("⚡", "").strip()
-                if clean_text:
-                    label_parts.append(clean_text)
+                # Get text specifically inside this link
+                link_text = text.strip()
+                if not link_text: continue
 
-                final_label = " - ".join(label_parts) if label_parts else clean_text
+                # Check if this link contains its own resolution (Standard Movie Format)
+                own_res = re.search(res_regex, link_text.upper())
+                final_res = own_res.group(1) if own_res else curr_res
+
+                # Build a clean label
+                label_parts = []
+                if curr_episode: label_parts.append(curr_episode)
+                if final_res: label_parts.append(f"[{final_res}]")
                 
-                # Fallback check: if it's a Download button and has no info, use context
-                if not final_label or final_label.lower() in ['drive', 'instant', 'watch']:
-                   final_label = f"{current_episode} {link_res} {clean_text}".strip()
+                # If the link text isn't just a repeat of the resolution, add it
+                # This keeps "Drive", "Instant", or the file size
+                if link_text.upper() != final_res:
+                    label_parts.append(link_text)
+
+                quality_string = " - ".join(label_parts)
+                
+                # Final cleanup of unwanted symbols
+                quality_string = quality_string.replace("⚡", "").replace(":-", "").strip()
 
                 qualities.append({
-                    'quality': final_label,
+                    'quality': quality_string,
                     'url': href
                 })
 
-        # Remove duplicates and cleanup
-        unique_qualities = []
-        seen_urls = set()
-        for item in qualities:
-            if item['url'] not in seen_urls:
-                # Final polish on text
-                item['quality'] = re.sub(' +', ' ', item['quality']).replace(" - - ", " - ").strip()
-                unique_qualities.append(item)
-                seen_urls.add(item['url'])
+        # Remove Duplicates
+        seen = set()
+        unique = []
+        for q in qualities:
+            if q['url'] not in seen:
+                unique.append(q)
+                seen.add(q['url'])
 
-        return unique_qualities
+        return unique
 
     except Exception as e:
         print(f"Scraper Error: {e}")
