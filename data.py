@@ -12,31 +12,35 @@ def get_movie_qualities(movie_url):
         soup = BeautifulSoup(response.text, 'html.parser')
         qualities = []
 
-        # Target the content area
+        # Target the main content area
         content = soup.find('main', class_='page-body') or soup.find('div', class_='entry-content')
         if not content: return []
 
-        # Context Memory
         curr_episode = ""
         curr_res = ""
 
-        # regex to find resolutions/qualities
+        # Pattern to identify resolutions (excluding things like "7.8/10")
         res_regex = r'(\d{3,4}P|4K|2160P|HEVC|10BIT|WEB-DL|BLURAY)'
 
-        # Loop through every tag in order
+        # Iterate through every tag to keep visual order
         for tag in content.find_all(['h3', 'h4', 'p', 'strong', 'a', 'span']):
             text = tag.get_text(" ", strip=True)
             text_up = text.upper()
 
-            # 1. Update Episode Context (e.g., "Episode 1", "Season 1")
+            # 1. Detect Episode/Season (e.g. "Episode 1")
             if "EPISODE" in text_up or "SEASON" in text_up:
+                # Ignore metadata like "7.8/10" found in headers
+                if "/" in text and not "10BIT" in text_up:
+                    continue
+                    
                 ep_match = re.search(r'((?:EPISODE|SEASON)\s+\d+)', text_up)
                 if ep_match:
-                    curr_episode = ep_match.group(1).title()
-                    curr_res = "" # Reset resolution when episode changes
+                    new_ep = ep_match.group(1).title()
+                    if new_ep != curr_episode:
+                        curr_episode = new_ep
+                        curr_res = "" # Reset resolution context for new episode
 
-            # 2. Update Resolution Context
-            # If the tag is NOT a link and contains a resolution, save it (e.g., "720p -")
+            # 2. Update Resolution context (if not a link)
             if tag.name != 'a':
                 res_match = re.search(res_regex, text_up)
                 if res_match:
@@ -46,32 +50,34 @@ def get_movie_qualities(movie_url):
             if tag.name == 'a' and tag.has_attr('href'):
                 href = tag['href']
                 
-                # Skip junk
-                if any(x in href.lower() for x in ['telegram', 'discord', 'how-to', 'wp-admin']):
+                # Filter out junk and social links
+                if any(x in href.lower() for x in ['telegram', 'discord', 'how-to', 'wp-admin', 'imdb']):
                     continue
 
-                # Get text specifically inside this link
                 link_text = text.strip()
-                if not link_text: continue
+                if not link_text or len(link_text) < 2: continue
 
-                # Check if this link contains its own resolution (Standard Movie Format)
+                # Determine final resolution for this link
                 own_res = re.search(res_regex, link_text.upper())
                 final_res = own_res.group(1) if own_res else curr_res
 
-                # Build a clean label
+                # Build label parts
                 label_parts = []
                 if curr_episode: label_parts.append(curr_episode)
                 if final_res: label_parts.append(f"[{final_res}]")
                 
-                # If the link text isn't just a repeat of the resolution, add it
-                # This keeps "Drive", "Instant", or the file size
-                if link_text.upper() != final_res:
-                    label_parts.append(link_text)
+                # Only add link text if it's not a duplicate of the Episode or Resolution
+                clean_link_text = link_text.replace("⚡", "").strip()
+                if clean_link_text.upper() != curr_episode.upper() and clean_link_text.upper() != final_res:
+                    # Specific check for HubDrive/WATCH style labels
+                    if clean_link_text.upper() == "WATCH":
+                        label_parts.append("Online Player")
+                    else:
+                        label_parts.append(clean_link_text)
 
+                # Join parts and clean up
                 quality_string = " - ".join(label_parts)
-                
-                # Final cleanup of unwanted symbols
-                quality_string = quality_string.replace("⚡", "").replace(":-", "").strip()
+                quality_string = re.sub(r'\s+', ' ', quality_string).replace(" - - ", " - ").strip()
 
                 qualities.append({
                     'quality': quality_string,
@@ -87,7 +93,6 @@ def get_movie_qualities(movie_url):
                 seen.add(q['url'])
 
         return unique
-
     except Exception as e:
         print(f"Scraper Error: {e}")
         return []
