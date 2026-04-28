@@ -4,76 +4,64 @@ import re
 
 def get_movie_qualities(movie_url):
     headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept-Language": "en-US,en;q=0.9"
     }
+    
     try:
-        response = requests.get(movie_url, headers=headers, timeout=10)
+        response = requests.get(movie_url, headers=headers, timeout=15)
         soup = BeautifulSoup(response.text, 'html.parser')
         qualities = []
 
-        # Target the specific content area
-        main_content = soup.find('div', class_='entry-content') or soup.find('article')
-        if not main_content:
+        # 1. Locate the main content area (HDHub uses 'page-body' or 'entry-content')
+        content_area = soup.find('main', class_='page-body') or soup.find('div', class_='entry-content')
+        
+        if not content_area:
             return []
 
-        current_res = ""
-        current_section = "Movie"
+        # 2. Extract Title for context
+        page_title = soup.find('h1', class_='page-title')
+        movie_name = page_title.get_text(strip=True) if page_title else "Movie"
 
-        # Find all tags that could contain headers or links
-        for element in main_content.find_all(['h1', 'h2', 'h3', 'h4', 'p', 'a', 'span', 'strong']):
-            # Get full text including hidden spans
-            text_raw = element.get_text(strip=True)
-            text_upper = text_raw.upper()
+        # 3. Targeted Link Extraction
+        # We look for all <a> tags that contain resolution keywords or sizes
+        res_pattern = re.compile(r'(\d{3,4}p|4K|2160p|HEVC|10bit|Dual Audio|MB|GB)', re.IGNORECASE)
 
-            if not text_raw: continue
+        for link in content_area.find_all('a', href=True):
+            href = link['href']
+            
+            # Get text from the link AND its children (like <span> or <strong>)
+            # This is key for HDHub as the text is often inside <a><span>...</span></a>
+            link_text = link.get_text(" ", strip=True) 
 
-            # 1. Update Section (Series/Episode detection)
-            if "SEASON" in text_upper or "EPISODE" in text_upper:
-                match_ep = re.search(r'(EPISODE\s+\d+|SEASON\s+\d+)', text_upper)
-                if match_ep:
-                    current_section = match_ep.group(1).title()
-                    current_res = "" # Reset resolution for new episode block
+            # If the link text is empty, check if it's an image link or social link
+            if not link_text or any(x in href.lower() for x in ['telegram', 'discord', 'how-to', 'wp-admin', 'contact']):
+                continue
 
-            # 2. Update Resolution (Only if NOT inside a link)
-            res_match = re.search(r'(\d{3,4}P|HEVC|10BIT|4K|2160P)', text_upper)
-            if res_match and element.name != 'a':
-                current_res = res_match.group(1)
-
-            # 3. Extract Links
-            if element.name == 'a' and element.has_attr('href'):
-                href = element['href']
+            # Validation: Only keep links that look like download buttons
+            if res_pattern.search(link_text) or "WATCH" in link_text.upper():
                 
-                # Filter out junk links
-                if any(x in href.lower() for x in ['telegram', 'how-to', 'wp-admin', 'join']):
-                    continue
-
-                # Clean up the link label
-                label = text_raw
-                # If HDHub has an empty link text but has a span inside, BeautifulSoup handles it,
-                # but we should ensure we have the resolution.
-                if current_res and current_res not in label.upper():
-                    final_label = f"{current_section} [{current_res}] - {label}"
-                else:
-                    final_label = f"{current_section} - {label}"
-
-                # Final cleaning
-                final_label = final_label.replace("–", "").replace("|", "").strip()
-                final_label = re.sub(' +', ' ', final_label)
+                # Clean up the label
+                clean_label = link_text.replace("⚡", "").replace(":-", "").strip()
+                
+                # If it's a "WATCH" link, give it a better name
+                if "WATCH" in clean_label.upper():
+                    clean_label = f"✨ Online Player - {clean_label}"
 
                 qualities.append({
-                    'quality': final_label,
+                    'quality': clean_label,
                     'url': href
                 })
 
-        # Remove duplicates
+        # 4. Handle Redirection / Final Cleaning
+        unique_qualities = []
         seen_urls = set()
-        unique_list = []
-        for q in qualities:
-            if q['url'] not in seen_urls:
-                unique_list.append(q)
-                seen_urls.add(q['url'])
+        for item in qualities:
+            if item['url'] not in seen_urls:
+                unique_qualities.append(item)
+                seen_urls.add(item['url'])
 
-        return unique_list
+        return unique_qualities
 
     except Exception as e:
         print(f"Scraping error: {e}")
