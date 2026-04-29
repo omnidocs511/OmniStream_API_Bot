@@ -52,11 +52,15 @@ async def send_results_page(update_or_query, context, page):
     if isinstance(update_or_query, Update):
         sent_results = await update_or_query.message.reply_text(text, parse_mode='Markdown', reply_markup=reply_markup)
 
+        tip_text = "💡 *Tip:* For **faster loading** and **better performance**, Open in **System Browserr** (Chrome, Firefox, Edge, etc.)"
+        send_tip = await update_or_query.message.reply_text(tip_text, parse_mode='Markdown')
+        
         notice_text = "⚠️ *Notice:*\nThis message will auto-delete in 15 minutes for privacy."
         sent_notice = await update_or_query.message.reply_text(notice_text, parse_mode='Markdown')
 
-        schedule_delete(context, update_or_query.effective_chat.id, sent_results.message_id)
         schedule_delete(context, update_or_query.effective_chat.id, sent_notice.message_id)
+        schedule_delete(context, update_or_query.effective_chat.id, send_tip.message_id)
+        schedule_delete(context, update_or_query.effective_chat.id, sent_results.message_id)
         schedule_delete(context, update_or_query.effective_chat.id, update_or_query.message.message_id)
     else:
         await update_or_query.edit_message_text(text, parse_mode='Markdown', reply_markup=reply_markup)
