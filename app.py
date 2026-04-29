@@ -24,14 +24,9 @@ def links():
 def run_bot():
     """Function to initialize and run the telegram bot."""
     print("Starting Telegram Bot...")
-    # We create a new event loop for the background thread
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    
-    # Import the application object from bot.py
-    # We will modify bot.py slightly to make this easier
-    from bot import application
-    bot.application.run_polling(close_loop=False)
+    # This specifically fixes the 'coroutine never awaited' warning
+    # and handles the background thread loop
+    asyncio.run(bot.application.run_polling(stop_signals=None))
 
 if __name__ == "__main__":
     # 1. Start the Bot in a background thread
@@ -39,5 +34,5 @@ if __name__ == "__main__":
     bot_thread.start()
     
     # 2. Start Flask (Render requires this to be on 0.0.0.0)
-    port = int(os.environ.get("PORT", 5000))
+    port = int(os.environ.get("PORT", 10000))
     app.run(host='0.0.0.0', port=port)
