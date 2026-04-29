@@ -37,7 +37,7 @@ async def send_results_page(update_or_query, context, page):
         safe_url = urllib.parse.quote(movie['link']) 
         
         # ✅ UPDATE THIS to your live Vercel/GitHub Pages URL
-        live_site_url = "http://127.0.0.1:5500/OmniStream" 
+        live_site_url = "https://omnistream-bot.vercel.app" 
         web_portal_url = f"{live_site_url}/index.html?title={safe_title}&url={safe_url}"
         
         text += f"{start_idx + i + 1}. {movie['title']}\n\n"
