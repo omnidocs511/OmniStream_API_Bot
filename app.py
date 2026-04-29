@@ -31,7 +31,7 @@ def run_bot():
     # Import the application object from bot.py
     # We will modify bot.py slightly to make this easier
     from bot import application
-    application.run_polling(close_loop=False)
+    bot.application.run_polling(close_loop=False)
 
 if __name__ == "__main__":
     # 1. Start the Bot in a background thread
