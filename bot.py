@@ -6,6 +6,7 @@ from data import search_hdhub
 
 TOKEN = '8646555096:AAFovFtcJmAr0BsQVIEJzdT0jYQENUfDwGY'
 ITEMS_PER_PAGE = 5
+LIVE_SITE_URL = "https://omnistream-bot.vercel.app"
 
 # --- AUTO-DELETE LOGIC ---
 async def delete_message_job(context: ContextTypes.DEFAULT_TYPE):
@@ -35,10 +36,8 @@ async def send_results_page(update_or_query, context, page):
     for i, movie in enumerate(current_batch):
         safe_title = urllib.parse.quote(movie['title'])
         safe_url = urllib.parse.quote(movie['link']) 
-        
-        # ✅ UPDATE THIS to your live Vercel/GitHub Pages URL
-        live_site_url = "https://omnistream-bot.vercel.app" 
-        web_portal_url = f"{live_site_url}/index.html?title={safe_title}&url={safe_url}"
+
+        web_portal_url = f"{LIVE_SITE_URL}/index.html?title={safe_title}&url={safe_url}"
         
         text += f"{start_idx + i + 1}. {movie['title']}\n\n"
         keyboard.append([InlineKeyboardButton(f"🚀 Download {start_idx + i + 1}", url=web_portal_url)])
