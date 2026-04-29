@@ -3,100 +3,86 @@ from bs4 import BeautifulSoup
 import re
 
 def get_movie_qualities(movie_url):
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
-    }
-    
+    headers = {"User-Agent": "Mozilla/5.0"}
     try:
-        response = requests.get(movie_url, headers=headers, timeout=15)
+        response = requests.get(movie_url, headers=headers)
         soup = BeautifulSoup(response.text, 'html.parser')
         qualities = []
 
-        # Target the main content area
-        content = soup.find('main', class_='page-body') or soup.find('div', class_='entry-content')
-        if not content: return []
+        main_content = soup.find('div', class_='entry-content') or soup.find('main', class_='page-body')
+        if not main_content:
+            return []
 
-        curr_episode = ""
-        curr_res = ""
-        res_regex = r'(\d{3,4}P|4K|2160P|HEVC|10BIT|WEB-DL|BLURAY)'
+        current_section = "Full Movie / Pack" 
+        current_res = "" 
 
-        for tag in content.find_all(['h3', 'h4', 'p', 'strong', 'a', 'span']):
-            text = tag.get_text(" ", strip=True)
-            text_up = text.upper()
+        for element in main_content.find_all(['h1', 'h2', 'h3', 'h4', 'p', 'a', 'span', 'strong']):
+            text_raw = element.get_text().strip()
+            text_upper = text_raw.upper()
 
-            # 1. Detect Episode/Season Header (Context)
-            if "EPISODE" in text_up or "SEASON" in text_up:
-                # Basic check to avoid rating strings like "7.8/10"
-                if "/" in text and "BIT" not in text_up: continue
-                    
-                ep_match = re.search(r'((?:EPISODE|SEASON)\s+\d+)', text_up)
-                if ep_match:
-                    curr_episode = ep_match.group(1).title()
-                    curr_res = "" 
+            if not text_upper: continue
 
-            # 2. Update Resolution context (if NOT an <a> tag)
-            if tag.name != 'a':
-                res_match = re.search(res_regex, text_up)
-                if res_match:
-                    curr_res = res_match.group(1)
+            # 1. Detect Section Switch
+            if "SINGLE EPISODE" in text_upper:
+                current_section = "Episode Links"
+            
+            # 2. Update Episode Number & RESET resolution for that episode
+            if "EPISODE" in text_upper and any(char.isdigit() for char in text_upper):
+                match_ep = re.search(r'(EPISODE\s+\d+)', text_upper, re.IGNORECASE)
+                if match_ep:
+                    current_section = match_ep.group(1).title()
+                    # Only reset resolution if it's a section heading, not a link
+                    if element.name != 'a':
+                        current_res = "" 
 
-            # 3. Process Links
-            if tag.name == 'a' and tag.has_attr('href'):
-                href = tag['href']
-                link_text = text.strip()
-                link_text_up = link_text.upper()
+            # 3. Update Resolution (Improved Regex)
+            res_match = re.search(r'(\d{3,4}P|HEVC|10BIT|4K)', text_upper)
+            if res_match:
+                if element.name != 'a':
+                    current_res = res_match.group(1)
 
-                # --- NEW FILTERS BASED ON YOUR IMAGES ---
-                
-                # A. Ignore "WATCH" links
-                if "WATCH" in link_text_up:
-                    continue
-                
-                # B. Ignore standalone quality links (e.g., "4K | SDR | HEVC")
-                # We identify these if the link text is ONLY resolutions/codecs
-                clean_comparison = re.sub(r'[| \-]', '', link_text_up)
-                if clean_comparison in ["4KSDRHEVC", "720PHEVC", "1080PHEVC", "4KHEVC"]:
-                    continue
+            # 4. Extract Links
+            if element.name == 'a' and element.has_attr('href'):
+                href = element['href']
+                link_text = text_raw.lower()
 
-                # C. Skip common junk
-                if any(x in href.lower() for x in ['telegram', 'discord', 'how-to', 'wp-admin', 'imdb']):
-                    continue
+                # More robust detection
+                has_size = bool(re.search(r'\[?\d+(\.\d+)?\s*(mb|gb)\]?', link_text))
+                has_res = bool(re.search(r'(\d{3,4}p|4k)', link_text))
+                is_server = any(s in link_text for s in ['drive', 'download', 'hub', 'mega', 'direct'])
+                is_pack = "pack" in link_text or ("p" in link_text and "x264" in link_text)
+                is_ep_link = "episode" in link_text
 
-                if not link_text or len(link_text) < 2: continue
+                if is_server or is_pack or has_size or has_res or is_ep_link:
+                    # Prepend current resolution if it's not already in the link text
+                    if current_res and current_res.lower() not in link_text:
+                        final_label = f"[{current_res}] {text_raw}"
+                    else:
+                        final_label = text_raw
 
-                # Determine final resolution
-                own_res = re.search(res_regex, link_text_up)
-                final_res = own_res.group(1) if own_res else curr_res
+                    # Filter out Telegram links, 'How to' guides, and internal promotional links (like 4khdhub.click)
+                    is_internal_promo = "hdhub" in href.lower() or "hdhub" in link_text
+                    if "telegram" not in href.lower() and "how to" not in link_text and not is_internal_promo:
+                        final_label = final_label.replace("|", " ").replace("–", "-").strip()
+                        final_label = re.sub(' +', ' ', final_label)
+                        
+                        qualities.append({
+                            'group': current_section,
+                            'quality': final_label,
+                            'url': href
+                        })
 
-                # Build Label
-                label_parts = []
-                if curr_episode: label_parts.append(curr_episode)
-                if final_res: label_parts.append(f"[{final_res}]")
-                
-                # Add link text only if it's unique (not just repeating 'Episode 1')
-                if link_text_up != curr_episode.upper() and link_text_up != final_res:
-                    label_parts.append(link_text)
-
-                quality_string = " - ".join(label_parts)
-                quality_string = re.sub(r'\s+', ' ', quality_string).replace(" - - ", " - ").strip()
-
-                qualities.append({
-                    'quality': quality_string,
-                    'url': href
-                })
-
-        # Remove Duplicates
-        seen = set()
-        unique = []
+        seen_urls = set()
+        unique_list = []
         for q in qualities:
-            if q['url'] not in seen:
-                unique.append(q)
-                seen.add(q['url'])
+            if q['url'] not in seen_urls:
+                unique_list.append(q)
+                seen_urls.add(q['url'])
 
-        return unique
-        
+        return unique_list
+
     except Exception as e:
-        print(f"Scraper Error: {e}")
+        print(f"Scraping error: {e}")
         return []
     
 def search_hdhub(query):
